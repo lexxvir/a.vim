@@ -376,6 +376,47 @@ function! EnumerateFilesByExtensionInPath(baseName, extension, pathList, relPath
    return enumeration
 endfunction
 
+" Function : FindFileByAlternateSearchPath (PRIVATE)
+" Purpose  : find file using alternate search path
+"
+" Args     : baseName -- base name of the file
+"            extension -- extension whose alternates are to be enumerated
+"            pathList -- the list of paths to enumerate
+"            currentPath -- current path
+" Returns  : A comma separated list of found files
+" Author   : Alexey Arbuzov (lexx.vir@gmail.com)
+function! FindFileByAlternateSearchPath(baseName, extension, pathList, currentPath)
+   let enumeration = ""
+   let extSpec = ""
+   let v:errmsg = ""
+   silent! echo g:alternateExtensions_{a:extension}
+   if (v:errmsg == "")
+      let extSpec = g:alternateExtensions_{a:extension}
+   endif
+   if (extSpec == "")
+      if (has_key(g:alternateExtensionsDict, a:extension))
+         let extSpec = g:alternateExtensionsDict[a:extension]
+      endif
+   endif
+   if (extSpec != "")
+      let n = 1
+      let done = 0
+      while (!done)
+         let ext = <SID>GetNthItemFromList(extSpec, n)
+         if (ext != "")
+            let fileName = <SID>FindFileInSearchPathEx(a:baseName . '.' . ext, a:pathList, a:currentPath, 1)
+            if (fileName != "")
+			   return fileName
+            endif
+         else
+            let done = 1
+         endif
+         let n = n + 1
+      endwhile
+   endif
+   return ""
+endfunction
+
 " Function : DetermineExtension (PRIVATE)
 " Purpose  : Determines the extension of a filename based on the register
 "            alternate extension. This allow extension which contain dots to 
@@ -446,23 +487,20 @@ function! AlternateFile(splitWindow, ...)
         let allfiles1 = EnumerateFilesByExtension(currentPath, baseName, extension)
         let allfiles2 = EnumerateFilesByExtensionInPath(baseName, extension, g:alternateSearchPath, currentPath)
 
-        if (allfiles1 != "")
-           if (allfiles2 != "")
-              let allfiles = allfiles1 . ',' . allfiles2
-           else
-              let allfiles = allfiles1
-           endif
-        else 
-           let allfiles = allfiles2
-        endif
-     endif
+		let allfiles = allfiles1
+		if (allfiles != "" )
+		   let allfiles = allfiles . ',' . allfiles2
+		else
+		   let allfiles = allfiles2
+		endif
+	 endif
 
-     if (allfiles != "") 
+     if (allfiles != "")
         let bestFile = ""
         let bestScore = 0
         let score = 0
         let n = 1
-         
+
         let onefile = <SID>GetNthItemFromList(allfiles, n)
         let bestFile = onefile
         while (onefile != "" && score < 2)
@@ -475,8 +513,14 @@ function! AlternateFile(splitWindow, ...)
            let onefile = <SID>GetNthItemFromList(allfiles, n)
         endwhile
 
-        if (bestScore == 0 && g:alternateNoDefaultAlternate == 1)
-           echo "No existing alternate available"
+		if (bestScore == 0)
+           let bestFile = FindFileByAlternateSearchPath(baseName, extension, g:alternateSearchPath, currentPath)
+		   if (bestFile == "" && g:alternateNoDefaultAlternate == 1)
+              echo "No existing alternate available"
+           else
+              call <SID>FindOrCreateBuffer(bestFile, a:splitWindow, 1)
+              let b:AlternateAllFiles = bestFile
+           endif
         else
            call <SID>FindOrCreateBuffer(bestFile, a:splitWindow, 1)
            let b:AlternateAllFiles = allfiles
